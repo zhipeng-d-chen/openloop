@@ -27,7 +27,8 @@ banner = """
                ╔╝╔╗╚╣╚═╝║╚══╣╚╩═║╔═╗║╚═╝║
                ╚═╝╚═╩═══╩═══╩═══╩╝─╚╩═══╝
                我的gihub：github.com/Gzgod
-               我的推特：推特雪糕战神@Hy78516012                   """
+               我的推特：推特雪糕战神@Hy78516012
+"""
 
 def logger(message, level='info', value=""):
     now = time.strftime('%Y-%m-%dT%H:%M:%S')
@@ -41,18 +42,8 @@ def logger(message, level='info', value=""):
     color = colors.get(level, Colors.WHITE)
     print(f"{color}[{now}] [{level.upper()}]: {message}{Colors.RESET}", f"{Colors.YELLOW}{value}{Colors.RESET}")
 
-def ask_question(query):
-    return input(query)
-
 def get_random_quality():
     return random.randint(60, 99)
-
-def get_proxies():
-    if not os.path.exists('proxy.txt'):
-        logger("代理文件 proxy.txt 未找到!", 'error')
-        return []
-    with open('proxy.txt', 'r') as file:
-        return [line.strip() for line in file if line.strip()]
 
 def get_tokens():
     if not os.path.exists('token.txt'):
@@ -61,16 +52,14 @@ def get_tokens():
     with open('token.txt', 'r') as file:
         return [line.strip() for line in file if line.strip()]
 
-async def share_bandwidth(token, proxy=None):
+async def share_bandwidth(token):
     try:
         quality = get_random_quality()
-        proxies = {'https': f'http://{proxy}'} if proxy else None
 
         response = requests.post('https://api.openloop.so/bandwidth/share',
                                  headers={'Authorization': f'Bearer {token}',
                                           'Content-Type': 'application/json'},
                                  json={'quality': quality},
-                                 proxies=proxies,
                                  verify=False)
 
         response.raise_for_status()
@@ -87,12 +76,11 @@ async def share_bandwidth(token, proxy=None):
     except requests.RequestException as e:
         logger(f"分享带宽时出错: {e}", 'error')
 
-async def share_bandwidth_for_all_tokens(proxies=None):
+async def share_bandwidth_for_all_tokens():
     tokens = get_tokens()
     for index, token in enumerate(tokens):
-        proxy = proxies[index] if proxies and index < len(proxies) else None
         logger(f"正在为第 {index + 1} 个账号分享带宽...", 'info')
-        await share_bandwidth(token, proxy)
+        await share_bandwidth(token)
 
 def get_account_info():
     if not os.path.exists('accounts.txt'):
@@ -101,15 +89,13 @@ def get_account_info():
     with open('accounts.txt', 'r') as file:
         return [line.strip().split(',') for line in file if line.strip()]
 
-def login_user(email, password, use_proxy=True):
+def login_user(email, password):
     try:
         login_payload = {'username': email, 'password': password}
-        proxies = None if not use_proxy else {'https': f'http://{get_proxies()[0]}'}
 
         login_response = requests.post('https://api.openloop.so/users/login',
                                        headers={'Content-Type': 'application/json'},
                                        data=json.dumps(login_payload),
-                                       proxies=proxies,
                                        verify=False)
 
         if login_response.status_code != 200:
@@ -134,26 +120,23 @@ def register_user():
             logger("账户信息文件 accounts.txt 为空!", 'error')
             return
 
-        use_proxy_choice = ask_question('是否使用代理进行注册？(y/n): ').lower()
-        invite_code = ask_question('请输入您的邀请码（所有账户将使用这个邀请码）: ')
+        invite_code = 'ol9902e367'
 
         for email, password in accounts:
             registration_payload = {'name': email, 'username': email, 'password': password, 'inviteCode': invite_code}
-            proxies = {'https': f'http://{get_proxies()[0]}'} if use_proxy_choice == 'y' else None
 
             try:
                 register_response = requests.post('https://api.openloop.so/users/register',
                                                   headers={'Content-Type': 'application/json'},
                                                   data=json.dumps(registration_payload),
-                                                  proxies=proxies,
                                                   verify=False)
 
                 if register_response.status_code == 401:
                     logger(f'邮箱 {email} 已存在。尝试登录...')
-                    login_user(email, password, use_proxy_choice == 'y')
+                    login_user(email, password)
                 elif register_response.status_code == 200:
                     logger(f'注册 {email} 成功:', 'success')
-                    login_user(email, password, use_proxy_choice == 'y')
+                    login_user(email, password)
                 else:
                     raise requests.HTTPError(f"注册 {email} 失败，状态码: {register_response.status_code}")
             except requests.RequestException as e:
@@ -163,34 +146,16 @@ def register_user():
         logger('用户中断了进程。', 'info')
 
 def main_menu():
+    print(Colors.MAGENTA + banner + Colors.RESET)
+    logger('开始分享带宽...')
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(share_bandwidth_for_all_tokens())
+
     while True:
-        print(Colors.MAGENTA + banner + Colors.RESET)
-        print(f"{Colors.YELLOW}1. 启动节点")
-        print(f"2. 注册或获取Token")
-        print(f"3. 退出")
-        choice = ask_question(f"{Colors.WHITE}请选择 (1, 2, 或 3): {Colors.RESET}")
-
-        if choice == '1':
-            use_proxy_choice = ask_question('是否使用代理启动节点？(y/n): ').lower()
-            proxies = get_proxies() if use_proxy_choice == 'y' else None
-            if use_proxy_choice == 'y' and not proxies:
-                logger("没有可用的代理，将不使用代理。", 'warn')
-
-            logger('开始分享带宽...')
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(share_bandwidth_for_all_tokens(proxies))
-
-            while True:
-                time.sleep(60)
-                loop.run_until_complete(share_bandwidth_for_all_tokens(proxies))
-
-        elif choice == '2':
-            register_user()
-        elif choice == '3':
-            logger('退出应用程序...')
-            break
-        else:
-            logger('无效选项，请重试。', 'warn')
+        time.sleep(60)
+        loop.run_until_complete(share_bandwidth_for_all_tokens())
 
 if __name__ == "__main__":
+    register_user()
     main_menu()
